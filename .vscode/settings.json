@@ -1,0 +1,178 @@
+{
+  // General Appearance
+  "workbench.colorTheme": "Atom One Light",
+  "workbench.iconTheme": "vscode-jetbrains-icon-theme-2023-light",
+  "workbench.productIconTheme": "el-vsc-v1-icons",
+  "editor.fontFamily": "Fira Code, Consolas, 'Courier New', monospace",
+  "editor.fontSize": 13,
+  "terminal.integrated.fontSize": 14,
+  "debug.console.fontSize": 16,
+  "markdown.preview.fontSize": 16,
+  "window.zoomLevel": 1,
+  "editor.fontLigatures": true,
+  "editor.lineHeight": 24,
+  "editor.cursorStyle": "line-thin",
+  "editor.cursorBlinking": "smooth",
+  "workbench.activityBar.location": "hidden",
+
+  // Code Style and Formatting
+  "editor.tabSize": 4,
+  "editor.insertSpaces": true,
+  "editor.formatOnSave": true,
+  "editor.rulers": [],
+  "editor.renderWhitespace": "none",
+  "editor.trimAutoWhitespace": true,
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.autoSave": "onFocusChange",
+
+  // Code Navigation and IntelliSense
+  "editor.smoothScrolling": true,
+  "editor.minimap.enabled": false,
+  "breadcrumbs.enabled": true,
+  "editor.wordWrap": "on",
+  "editor.quickSuggestions": {
+    "other": true,
+    "comments": false,
+    "strings": true
+  },
+  "editor.parameterHints.enabled": true,
+  "editor.suggestSelection": "first",
+
+  // Git and Version Control
+  "git.enableSmartCommit": true,
+  "git.autofetch": true,
+  "git.confirmSync": false,
+  "git.ignoreLimitWarning": true,
+  "git.openRepositoryInParentFolders": "always",
+  "diffEditor.ignoreTrimWhitespace": false,
+  "diffEditor.useInlineViewWhenSpaceIsLimited": false,
+
+  // Terminal and Integrated Shell
+  "terminal.integrated.fontFamily": "Fira Code, monospace",
+  "terminal.integrated.cursorStyle": "line",
+  "terminal.integrated.cursorBlinking": true,
+  "terminal.integrated.scrollback": 10000,
+
+  // Extensions and Tools
+  "prettier.singleQuote": true,
+  "prettier.trailingComma": "all",
+  "eslint.alwaysShowStatus": true,
+  "github.copilot.editor.enableAutoCompletions": true,
+
+  // Workspace and Files
+  "explorer.compactFolders": false,
+  "explorer.confirmDragAndDrop": false,
+  "files.autoGuessEncoding": true,
+  "workbench.startupEditor": "none",
+  "window.titleBarStyle": "custom",
+  "workbench.editor.showTabs": "multiple",
+
+  // Zen Mode and Focus
+  "zenMode.fullScreen": true,
+  "zenMode.centerLayout": true,
+  "zenMode.hideLineNumbers": false,
+  "zenMode.silentNotifications": true,
+  "workbench.statusBar.visible": false,
+
+  // CodeLens
+  "editor.codeLens": true,
+
+  // Go Specific Settings
+  "[go]": {
+    "editor.defaultFormatter": "golang.go",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit",
+      "source.fixAll": "explicit"
+    },
+    "editor.suggest.snippetsPreventQuickSuggestions": false,
+    "editor.snippetSuggestions": "inline"
+  },
+  "gopls": {
+    "usePlaceholders": true, // Enable placeholders for function signatures
+    "staticcheck": true, // Run static analysis checks
+    "completeUnimported": true, // Auto-import packages
+    "matcher": "fuzzy", // Enable fuzzy matching for completion
+    "analyses": {
+      "unusedparams": true, // Enable 'unused parameters' check
+      "nilness": true // Enable nilness analysis
+    }
+  },
+
+  // Terminal Settings for Go
+  "go.toolsEnvVars": {
+    "GOFLAGS": "-mod=readonly"
+  },
+
+  // Python Specific Settings
+  "python.analysis.extraPaths": [
+    "./src/spiders",
+    "./web_crawler/src/spiders",
+    "./web_crawler/src"
+  ],
+  "python.globalModuleInstallation": true,
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.autopep8"
+  },
+
+  // JSON Specific Settings
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+
+  // Markdown Specific Settings
+  "[markdown]": {
+    "editor.wordWrap": "on",
+    "editor.quickSuggestions": {
+      "comments": "off",
+      "strings": "off",
+      "other": "off"
+    },
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+
+  // Jupyter Notebook Settings
+  "jupyter.enableExtendedPythonKernelCompletions": true,
+  "jupyter.widgetScriptSources": ["jsdelivr.com", "unpkg.com"],
+  "notebook.lineNumbers": "on",
+
+  // Markdown Preview Enhanced Settings
+  "markdown-preview-enhanced.previewTheme": "atom-light.css",
+  "markdown-preview-enhanced.enablePreviewZenMode": false,
+  "markdown-preview-enhanced.codeBlockTheme": "atom-light.css",
+
+  // Accessibility
+  "editor.accessibilitySupport": "off",
+
+  // Telemetry
+  "redhat.telemetry.enabled": false,
+
+  // File Exclusions
+  "files.exclude": {
+    "**/LICENSE": true,
+    "**/LICENSES_DEPENDENCIES.txt": true,
+    //"**/README.md": true,
+    "**/go.sum": true,
+    "**/notes.md": true,
+    //"**/docker-compose.yml": true,
+    //"**/synx.log": true,
+    "**/grafana/**": false,
+    "**/prometheus**": true,
+    "**/es-config/**": true,
+    "**/third_party_licenses": true,
+    "**/doc/**": true, // Hide documentation
+    "**/scripts/**": true, // Hide scripts folder,
+    "**/.trunk/**": true,
+    "**/.gitignore/**": true
+  },
+
+  // File Watcher Exclusions
+  "files.watcherExclude": {
+    "**/vendor/**": true,
+    "**/node_modules/**": true,
+    "**/dist/**": true
+  }
+}

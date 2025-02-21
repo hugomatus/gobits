@@ -1,0 +1,107 @@
+@startuml
+!theme plain
+skinparam classFontSize 12
+skinparam classAttributeFontSize 11
+title "Configuration Management Class Diagram (Updated)"
+
+' Interfaces
+interface "Config" as IConfig {
+  +Load() error
+  +Get(key string) interface{}
+  +GetString(key string) string
+  +GetSchema() interface{}
+  +Watch(ctx context.Context, onChange func()) error
+}
+
+interface "ConfigProvider" as IProvider {
+  +Load() error
+}
+
+interface "ConfigWatcher" as IWatcher {
+  +Watch(ctx context.Context, onChange func()) error
+}
+
+' Concrete Classes
+class "ConfigManager" as CM {
+  - viper          *viper.Viper
+  - logger         *zap.Logger
+  - provider       ConfigProvider
+  - watcher        ConfigWatcher
+  - schema         interface{}
+  - defaults       map[string]interface{}
+  - envPrefix      string
+  - remoteProvider *RemoteProvider
+  - pollInterval   time.Duration
+  - watchEnabled   bool
+  - validate       *validator.Validate
+  - path           string
+
+  + New(path string, logger *zap.Logger, opts ...Option) *ConfigManager
+  + Load() error
+  + Get(key string) interface{}
+  + GetString(key string) string
+  + GetSchema() interface{}
+  + Watch(ctx context.Context, onChange func()) error
+  {note} Watch() calls provider.Load() to re-unmarshal updated config before invoking onChange()
+}
+
+class "LocalConfigProvider" as LCP {
+  - viper     *viper.Viper
+  - path      string
+  - defaults  map[string]interface{}
+  - envPrefix string
+  - validate  *validator.Validate
+  - schema    interface{}
+  + Load() error
+  {note} Reads config file, unmarshals into schema, validates
+}
+
+class "RemoteConfigProvider" as RCP {
+  - viper     *viper.Viper
+  - provider  *RemoteProvider
+  - defaults  map[string]interface{}
+  - envPrefix string
+  - validate  *validator.Validate
+  - schema    interface{}
+  + Load() error
+  {note} Reads remote config, unmarshals, validates
+}
+
+class "LocalConfigWatcher" as LCW {
+  - viper  *viper.Viper
+  - logger *zap.Logger
+  + Watch(ctx context.Context, onChange func()) error
+  {note} Monitors file changes and triggers callback on change
+}
+
+class "RemoteConfigWatcher" as RCW {
+  - viper        *viper.Viper
+  - logger       *zap.Logger
+  - pollInterval time.Duration
+  - provider     *RemoteProvider
+  + Watch(ctx context.Context, onChange func()) error
+}
+
+class "RemoteProvider" as RPStruct {
+  + Type string
+  + Endpoint string
+  + Path string
+}
+
+class "Option" << (F,orchid) >> {
+  + func(*ConfigManager)
+}
+
+' Relationships
+IConfig <|-- CM
+IProvider <|-- LCP
+IProvider <|-- RCP
+IWatcher <|-- LCW
+IWatcher <|-- RCW
+
+CM o-- IProvider
+CM o-- IWatcher
+CM o-- RPStruct
+CM o-- Option
+
+@enduml

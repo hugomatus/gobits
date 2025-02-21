@@ -1,0 +1,9 @@
+Gobits
+Copyright 2023 Hugo Matus
+
+This product includes software developed by Hugo Matus.
+
+This product depends on:
+- github.com/spf13/viper - Mozilla Public License 2.0
+- go.uber.org/zap - MIT License
+- github.com/go-playground/validator/v10 - MIT License

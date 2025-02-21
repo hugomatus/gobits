@@ -1,0 +1,64 @@
+@startuml
+!theme plain
+title "Configuration Load & Watch Sequence (Updated)"
+
+actor User as U
+participant "ConfigManager" as CM
+participant "LocalConfigProvider" as LCP
+participant "LocalConfigWatcher" as LCW
+participant "Viper" as V
+participant "Logger" as LOG
+
+' --- Creation Phase ---
+U -> CM: New(path, logger, opts...)
+activate CM
+note right of CM
+  ConfigManager is created with:
+  - LocalConfigProvider
+  - LocalConfigWatcher
+end note
+CM -> LCP: Instantiate provider
+CM -> LCW: Instantiate watcher
+deactivate CM
+
+' --- Initial Loading Phase ---
+U -> CM: Load()
+activate CM
+CM -> LCP: Load()
+activate LCP
+LCP -> V: Set defaults, envPrefix
+LCP -> V: ReadInConfig() from file
+LCP -> V: Unmarshal into schema & validate
+deactivate LCP
+deactivate CM
+
+' --- Watching Phase ---
+U -> CM: Watch(ctx, onChange)
+activate CM
+CM -> LCW: Watch(ctx, wrappedCallback)
+activate LCW
+note right of LCW
+  Viper monitors file changes.
+  On change, triggers wrappedCallback.
+end note
+deactivate LCW
+deactivate CM
+
+' --- Change Detected ---
+V -> LCW: File change detected
+LCW -> CM: wrappedCallback() invoked
+activate CM
+note right of CM
+  wrappedCallback calls:
+  - provider.Load() [reload config: re-read file, unmarshal, validate]
+  - then onChange() to notify updated config
+end note
+CM -> LCP: Load() [Reload updated config]
+activate LCP
+LCP -> V: ReadInConfig() from updated file
+LCP -> V: Unmarshal new values into schema
+deactivate LCP
+CM -> LOG: onChange() invoked with new config
+deactivate CM
+
+@enduml

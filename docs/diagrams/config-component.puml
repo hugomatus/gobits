@@ -1,0 +1,39 @@
+@startuml
+!theme plain
+title "Configuration Management Component Diagram (Updated)"
+
+[ConfigManager] as CM
+
+' Providers - local or remote
+component "LocalConfigProvider" as LCP
+component "RemoteConfigProvider" as RCP
+
+' Watchers - local or remote
+component "LocalConfigWatcher" as LCW
+component "RemoteConfigWatcher" as RCW
+
+' External components
+database "Config File (.synx.yaml)" as CF
+rectangle "Viper" as V
+rectangle "Logger (zap.Logger)" as LOG
+cloud "Remote Services\n(e.g., Consul, etcd)" as RS
+
+' Relationships
+CM --> LCP : uses (default provider)
+CM --> RCP : uses (if remoteProvider configured)
+CM --> LCW : uses (default watcher)
+CM --> RCW : uses (if remoteProvider & watch enabled)
+LCP ..> CF : reads file
+LCP ..> V : unmarshals config
+LCW ..> V : monitors file changes
+RCP ..> RS : fetches remote config
+RCP ..> V : unmarshals remote config
+RCW ..> RS : polls remote service
+CM --> LOG : logs events
+
+note right of CM
+  ConfigManager reloads configuration on change.
+  Remote components are used when a remote provider is configured.
+end note
+
+@enduml
