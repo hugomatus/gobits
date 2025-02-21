@@ -15,7 +15,11 @@ SOURCES=$(shell find . -name '*.go' -not -path "./vendor/*")
 # Test coverage exclusions
 COVERAGE_EXCLUSIONS=github.com/hugomatus/gobits/examples
 
-.PHONY: all clean test coverage lint deps vendor help
+# Conventional commit types
+COMMIT_TYPES = fix feat docs style refactor perf test build ci chore revert
+COMMIT_SCOPE = $(shell git status --porcelain | cut -d' ' -f2 | xargs dirname | sort -u)
+
+.PHONY: all clean test coverage lint deps vendor help commit
 
 all: clean deps fmt lint test coverage ## Run all checks with fresh builds
 
@@ -73,6 +77,31 @@ fmt-check: ## Check if code is formatted
 	@test -z $(shell gofmt -l $(SOURCES))
 
 quality: clean fmt-check fmt lint test coverage ## Run all quality checks with fresh builds
+
+commit: ## Create a commit following Conventional Commits standard
+	@if [ -z "$(shell git status --porcelain)" ]; then \
+		echo "No changes to commit"; \
+		exit 1; \
+	fi
+	@echo "Staged files:"
+	@git status --porcelain
+	@echo "\nSelect commit type:"
+	@select type in $(COMMIT_TYPES); do \
+		if [ -n "$$type" ]; then \
+			echo "\nAvailable scopes:"; \
+			echo "$(COMMIT_SCOPE)"; \
+			echo "\nEnter scope (optional, press enter to skip):"; \
+			read scope; \
+			echo "\nEnter commit message:"; \
+			read message; \
+			if [ -n "$$scope" ]; then \
+				git commit -m "$$type($$scope): $$message"; \
+			else \
+				git commit -m "$$type: $$message"; \
+			fi; \
+			break; \
+		fi; \
+	done
 
 # Default target
 .DEFAULT_GOAL := help
