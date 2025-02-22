@@ -231,3 +231,50 @@ func TestRemoteConfigProvider(t *testing.T) {
 		assert.Contains(t, err.Error(), "mock")
 	}
 }
+
+func TestConfigGetters(t *testing.T) {
+	content := `{
+		"string_value": "test",
+		"int_value": 42,
+		"float_value": 3.14,
+		"bool_value": true,
+		"duration_value": "1h30m",
+		"time_value": "2024-02-21T15:04:05Z",
+		"string_slice": ["a", "b", "c"],
+		"string_map": {
+			"key1": "value1",
+			"key2": "value2"
+		}
+	}`
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	err := os.WriteFile(configPath, []byte(content), 0644)
+	assert.NoError(t, err)
+
+	logger := setupTestLogger()
+	cm := New(configPath, logger)
+	err = cm.Load()
+	assert.NoError(t, err)
+
+	// Test all getters
+	assert.Equal(t, "test", cm.GetString("string_value"))
+	assert.Equal(t, 42, cm.GetInt("int_value"))
+	assert.Equal(t, 3.14, cm.GetFloat64("float_value"))
+	assert.Equal(t, true, cm.GetBool("bool_value"))
+	assert.Equal(t, 90*time.Minute, cm.GetDuration("duration_value"))
+	assert.Equal(t, []string{"a", "b", "c"}, cm.GetStringSlice("string_slice"))
+
+	expectedMap := map[string]interface{}{
+		"key1": "value1",
+		"key2": "value2",
+	}
+	assert.Equal(t, expectedMap, cm.GetStringMap("string_map"))
+
+	expectedTime := time.Date(2024, 2, 21, 15, 4, 5, 0, time.UTC)
+	assert.Equal(t, expectedTime, cm.GetTime("time_value"))
+
+	// Test IsSet
+	assert.True(t, cm.IsSet("string_value"))
+	assert.False(t, cm.IsSet("nonexistent_key"))
+}

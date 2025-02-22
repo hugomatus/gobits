@@ -51,6 +51,14 @@ type Config interface {
 	Load() error
 	Get(key string) interface{}
 	GetString(key string) string
+	GetInt(key string) int
+	GetFloat64(key string) float64
+	GetBool(key string) bool
+	GetStringSlice(key string) []string
+	GetStringMap(key string) map[string]interface{}
+	GetDuration(key string) time.Duration
+	GetTime(key string) time.Time
+	IsSet(key string) bool
 	GetSchema() interface{}
 	Watch(ctx context.Context, onChange func()) error
 }
@@ -137,6 +145,46 @@ func (cm *ConfigManager) Get(key string) interface{} {
 // GetString returns a string value for the given key.
 func (cm *ConfigManager) GetString(key string) string {
 	return cm.viper.GetString(key)
+}
+
+// GetInt returns an integer value for the given key.
+func (cm *ConfigManager) GetInt(key string) int {
+	return cm.viper.GetInt(key)
+}
+
+// GetFloat64 returns a float64 value for the given key.
+func (cm *ConfigManager) GetFloat64(key string) float64 {
+	return cm.viper.GetFloat64(key)
+}
+
+// GetBool returns a boolean value for the given key.
+func (cm *ConfigManager) GetBool(key string) bool {
+	return cm.viper.GetBool(key)
+}
+
+// GetStringSlice returns a string slice value for the given key.
+func (cm *ConfigManager) GetStringSlice(key string) []string {
+	return cm.viper.GetStringSlice(key)
+}
+
+// GetStringMap returns a map[string]interface{} value for the given key.
+func (cm *ConfigManager) GetStringMap(key string) map[string]interface{} {
+	return cm.viper.GetStringMap(key)
+}
+
+// GetDuration returns a duration value for the given key.
+func (cm *ConfigManager) GetDuration(key string) time.Duration {
+	return cm.viper.GetDuration(key)
+}
+
+// GetTime returns a time.Time value for the given key.
+func (cm *ConfigManager) GetTime(key string) time.Time {
+	return cm.viper.GetTime(key)
+}
+
+// IsSet returns true if the key is set in the configuration.
+func (cm *ConfigManager) IsSet(key string) bool {
+	return cm.viper.IsSet(key)
 }
 
 // GetSchema returns the configured schema (if any).
