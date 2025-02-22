@@ -278,3 +278,38 @@ func TestConfigGetters(t *testing.T) {
 	assert.True(t, cm.IsSet("string_value"))
 	assert.False(t, cm.IsSet("nonexistent_key"))
 }
+
+func TestAllKeys(t *testing.T) {
+	content := `{
+        "database": {
+            "host": "localhost",
+            "port": 5432
+        },
+        "server": {
+            "enabled": true,
+            "settings": {
+                "timeout": "5s"
+            }
+        }
+    }`
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	err := os.WriteFile(configPath, []byte(content), 0644)
+	assert.NoError(t, err)
+
+	logger := setupTestLogger()
+	cm := New(configPath, logger)
+	err = cm.Load()
+	assert.NoError(t, err)
+
+	expectedKeys := []string{
+		"database.host",
+		"database.port",
+		"server.enabled",
+		"server.settings.timeout",
+	}
+
+	keys := cm.AllKeys()
+	assert.ElementsMatch(t, expectedKeys, keys)
+}

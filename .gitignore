@@ -15,7 +15,7 @@
 *.out
 
 # Dependency directories (remove the comment below to include it)
-# vendor/
+vendor/
 
 # Go workspace file
 go.work
@@ -23,3 +23,70 @@ go.work.sum
 
 # env file
 .env
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.settings
+.classpath
+.factorypath
+*.sublime-workspace
+*.sublime-project
+
+# Mac specific
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Build and binary directories
+bin/
+dist/
+build/
+release/
+
+# Test and coverage
+coverage.txt
+coverage.html
+profile.out
+cpu.out
+mem.out
+
+# Environment and secrets
+.env.local
+.env.*
+*.pem
+*.key
+*.cert
+
+# Debug files
+debug
+*.log
+logs/
+*.cpuprofile
+*.memprofile
+*.trace
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Project specific
+/config.local.json
+/config.*.local.json
+
+# Go specific
+go.sum
