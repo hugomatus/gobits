@@ -62,6 +62,7 @@ type Config interface {
 	GetSchema() interface{}
 	Watch(ctx context.Context, onChange func()) error
 	AllKeys() []string
+	AllSettings() map[string]interface{}
 }
 
 // ConfigManager is the main facade that delegates to a provider and watcher.
@@ -209,6 +210,11 @@ func (cm *ConfigManager) Watch(ctx context.Context, onChange func()) error {
 // AllKeys returns all keys holding a value in the configuration.
 func (cm *ConfigManager) AllKeys() []string {
 	return cm.viper.AllKeys()
+}
+
+// AllSettings returns all settings in the configuration.
+func (cm *ConfigManager) AllSettings() map[string]interface{} {
+	return cm.viper.AllSettings()
 }
 
 // LocalConfigProvider implements ConfigProvider for file-based + ENV configs.
