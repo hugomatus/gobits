@@ -329,20 +329,21 @@ type RemoteConfigWatcher struct {
 }
 
 func (w *RemoteConfigWatcher) Watch(ctx context.Context, onChange func()) error {
-	ticker := time.NewTicker(w.pollInterval)
 	go func() {
-		defer ticker.Stop()
 		for {
 			select {
-			case <-ticker.C:
-				if err := w.viper.ReadRemoteConfig(); err == nil {
-					w.logger.Info("Remote configuration updated")
-					onChange()
-				} else {
-					w.logger.Error("Error reading remote config", zap.Error(err))
-				}
 			case <-ctx.Done():
 				return
+			default:
+				// This actually sets up a proper watch mechanism
+				err := w.viper.WatchRemoteConfig()
+				if err != nil {
+					w.logger.Error("Error watching remote config", zap.Error(err))
+					time.Sleep(w.pollInterval) // Back off on error
+					continue
+				}
+				w.logger.Info("Remote configuration updated")
+				onChange()
 			}
 		}
 	}()
