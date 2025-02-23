@@ -48,9 +48,9 @@ func main() {
 	if err := cfg.Watch(ctx, func() {
 		logger.Info("Configuration changed!")
 		// Handle updated config as needed...
-		if appCfg, ok := cfg.GetSchema().(*config.AppConfig); ok {
-			logger.Info("Updated port", zap.String("server.port", appCfg.Server.Port))
-		}
+		//if appCfg, ok := cfg.GetSchema().(*config.AppConfig); ok {
+		//	logger.Info("Updated port", zap.String("server.port", appCfg.Server.Port))
+		//}
 	}); err != nil {
 		logger.Error("Failed to watch configuration", zap.Error(err))
 	}

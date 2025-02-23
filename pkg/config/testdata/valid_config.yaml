@@ -1,0 +1,9 @@
+server:
+  port: 8080
+  host: "localhost"
+  timeout: "30s"
+database:
+  host: "127.0.0.1"
+  port: 5432
+  name: "testdb"
+  maxConns: 10

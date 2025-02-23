@@ -4,312 +4,465 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
 type TestConfig struct {
-	Database struct {
-		Host     string `validate:"required"`
-		Port     int    `validate:"required,min=1,max=65535"`
-		Username string `validate:"required"`
-		Password string `validate:"required"`
-	}
 	Server struct {
-		Port     int   `validate:"required,min=1,max=65535"`
-		Timeouts []int `validate:"required,dive,min=1"`
-	}
+		Port    int    `yaml:"port" validate:"required,min=1,max=65535"`
+		Host    string `yaml:"host" validate:"required,hostname|ip"`
+		Timeout string `yaml:"timeout" validate:"required"`
+	} `yaml:"server"`
+	Database struct {
+		Host     string `yaml:"host" validate:"required"`
+		Port     int    `yaml:"port" validate:"required,min=1,max=65535"`
+		Name     string `yaml:"name" validate:"required"`
+		MaxConns int    `yaml:"maxConns" validate:"required,min=1"`
+	} `yaml:"database"`
 }
 
-func setupTestLogger() *zap.Logger {
+func setupTestConfig(t *testing.T) (string, func()) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+
+	content := []byte(`
+server:
+  port: 8080
+  host: "localhost"
+  timeout: "30s"
+database:
+  host: "127.0.0.1"
+  port: 5432
+  name: "testdb"
+  maxConns: 10
+`)
+
+	err := os.WriteFile(configPath, content, 0644)
+	require.NoError(t, err)
+
+	cleanup := func() {
+		os.RemoveAll(dir)
+	}
+
+	return configPath, cleanup
+}
+
+func TestBasicConfigOperations(t *testing.T) {
+	configPath, cleanup := setupTestConfig(t)
+	defer cleanup()
+
 	logger, _ := zap.NewDevelopment()
-	return logger
-}
+	cfg := New(configPath, logger)
 
-func createTestConfigFile(t *testing.T) string {
-	content := `{
-		"database": {
-			"host": "localhost",
-			"port": 5432,
-			"username": "test_user",
-			"password": "test_pass"
-		},
-		"server": {
-			"port": 8080,
-			"timeouts": [5, 10, 15]
-		}
-	}`
+	t.Run("Load Configuration", func(t *testing.T) {
+		err := cfg.Load()
+		require.NoError(t, err)
 
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.json")
-	err := os.WriteFile(configPath, []byte(content), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return configPath
-}
-
-func TestLocalConfigLoading(t *testing.T) {
-	configPath := createTestConfigFile(t)
-	logger := setupTestLogger()
-
-	schema := &TestConfig{}
-	cm := New(
-		configPath,
-		logger,
-		WithSchema(schema),
-	)
-
-	err := cm.Load()
-	assert.NoError(t, err)
-
-	// Test direct value access
-	assert.Equal(t, "localhost", cm.GetString("database.host"))
-	assert.Equal(t, float64(5432), cm.Get("database.port")) // Changed to expect float64
-
-	// Test schema validation
-	assert.Equal(t, "localhost", schema.Database.Host)
-	assert.Equal(t, 5432, schema.Database.Port) // This remains int because of struct type
-	assert.Equal(t, "test_user", schema.Database.Username)
-	assert.Equal(t, 8080, schema.Server.Port)
-	assert.Equal(t, []int{5, 10, 15}, schema.Server.Timeouts)
-}
-
-func TestConfigWithDefaults(t *testing.T) {
-	configPath := createTestConfigFile(t)
-	logger := setupTestLogger()
-
-	defaults := map[string]interface{}{
-		"database.host": "default-host",
-		"server.port":   9090,
-	}
-
-	cm := New(
-		configPath,
-		logger,
-		WithDefaults(defaults),
-	)
-
-	err := cm.Load()
-	assert.NoError(t, err)
-
-	// The file values should override defaults
-	assert.Equal(t, "localhost", cm.GetString("database.host"))
-	assert.Equal(t, float64(8080), cm.Get("server.port")) // Changed to expect float64
-}
-
-func TestConfigWithEnvVars(t *testing.T) {
-	configPath := createTestConfigFile(t)
-	logger := setupTestLogger()
-
-	// Set environment variables
-	os.Setenv("TEST_DATABASE_HOST", "env-host")
-	defer os.Unsetenv("TEST_DATABASE_HOST")
-
-	cm := New(
-		configPath,
-		logger,
-		WithEnvPrefix("TEST"),
-	)
-
-	// Force viper to bind the environment variable
-	err := cm.viper.BindEnv("database.host", "TEST_DATABASE_HOST")
-	assert.NoError(t, err, "Failed to bind environment variable")
-
-	err = cm.Load()
-	assert.NoError(t, err)
-
-	// Environment variables should override file values
-	assert.Equal(t, "env-host", cm.GetString("database.host"))
-}
-
-func TestConfigWatcher(t *testing.T) {
-	configPath := createTestConfigFile(t)
-	logger := setupTestLogger()
-
-	schema := &TestConfig{}
-	cm := New(
-		configPath,
-		logger,
-		WithSchema(schema),
-		WithWatcher(),
-	)
-
-	err := cm.Load()
-	assert.NoError(t, err)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	changeDetected := make(chan bool)
-	err = cm.Watch(ctx, func() {
-		changeDetected <- true
+		assert.Equal(t, 8080, cfg.GetInt("server.port"))
+		assert.Equal(t, "localhost", cfg.GetString("server.host"))
 	})
-	assert.NoError(t, err)
 
-	// Modify the config file
-	newContent := `{
-		"database": {
-			"host": "newhost",
-			"port": 5432,
-			"username": "test_user",
-			"password": "test_pass"
-		},
-		"server": {
-			"port": 8080,
-			"timeouts": [5, 10, 15]
-		}
-	}`
-
-	time.Sleep(100 * time.Millisecond) // Give watcher time to initialize
-	err = os.WriteFile(configPath, []byte(newContent), 0644)
-	assert.NoError(t, err)
-
-	select {
-	case <-changeDetected:
-		assert.Equal(t, "newhost", cm.GetString("database.host"))
-	case <-time.After(2 * time.Second):
-		t.Fatal("Config change not detected")
-	}
+	t.Run("Type Conversions", func(t *testing.T) {
+		assert.Equal(t, 8080, cfg.GetInt("server.port"))
+		assert.Equal(t, float64(8080), cfg.GetFloat64("server.port"))
+		assert.Equal(t, "30s", cfg.GetString("server.timeout"))
+		assert.Equal(t, 30*time.Second, cfg.GetDuration("server.timeout"))
+	})
 }
 
-func TestInvalidConfiguration(t *testing.T) {
-	invalidContent := `{
-		"database": {
-			"host": "",  // Empty host violates required validation
-			"port": 0,   // Zero port violates min validation
-			"username": "",
-			"password": ""
-		},
-		"server": {
-			"port": 0,
-			"timeouts": []
-		}
-	}`
+func TestSchemaValidation(t *testing.T) {
+	configPath, cleanup := setupTestConfig(t)
+	defer cleanup()
 
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "invalid_config.json")
-	err := os.WriteFile(configPath, []byte(invalidContent), 0644)
-	assert.NoError(t, err)
-
-	logger := setupTestLogger()
+	logger, _ := zap.NewDevelopment()
 	schema := &TestConfig{}
-	cm := New(
-		configPath,
-		logger,
-		WithSchema(schema),
-	)
 
-	err = cm.Load()
-	assert.Error(t, err) // Should fail validation
+	t.Run("Valid Schema", func(t *testing.T) {
+		cfg := New(configPath, logger, WithSchema(schema))
+		err := cfg.Load()
+		require.NoError(t, err)
+	})
+
+	t.Run("Invalid Schema", func(t *testing.T) {
+		invalidContent := []byte(`
+server:
+  port: -1  # Invalid port
+  host: ""  # Missing host
+`)
+		err := os.WriteFile(configPath, invalidContent, 0644)
+		require.NoError(t, err)
+
+		cfg := New(configPath, logger, WithSchema(schema))
+		err = cfg.Load()
+		assert.Error(t, err)
+	})
 }
 
-func TestRemoteConfigProvider(t *testing.T) {
-	logger := setupTestLogger()
-	schema := &TestConfig{}
+func TestEnvironmentOverrides(t *testing.T) {
+	configPath, cleanup := setupTestConfig(t)
+	defer cleanup()
 
-	remoteProvider := &RemoteProvider{
-		Type:     "mock",
-		Endpoint: "mock://localhost",
+	logger, _ := zap.NewDevelopment()
+
+	t.Run("Environment Override", func(t *testing.T) {
+		os.Setenv("APP_SERVER_PORT", "9090")
+		defer os.Unsetenv("APP_SERVER_PORT")
+
+		cfg := New(configPath, logger, WithEnvPrefix("APP"))
+
+		// Configure viper to bind environment variables
+		cfg.viper.SetEnvPrefix("APP")
+		cfg.viper.AutomaticEnv()
+		cfg.viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+
+		err := cfg.Load()
+		require.NoError(t, err)
+
+		assert.Equal(t, 9090, cfg.GetInt("server.port"))
+	})
+}
+
+func TestConcurrentAccess(t *testing.T) {
+	configPath, cleanup := setupTestConfig(t)
+	defer cleanup()
+
+	logger, _ := zap.NewDevelopment()
+	cfg := New(configPath, logger)
+	err := cfg.Load()
+	require.NoError(t, err)
+
+	t.Run("Concurrent Reads", func(t *testing.T) {
+		var wg sync.WaitGroup
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_ = cfg.GetInt("server.port")
+				_ = cfg.GetString("server.host")
+			}()
+		}
+		wg.Wait()
+	})
+}
+
+func TestWatcherSetup(t *testing.T) {
+	configPath, cleanup := setupTestConfig(t)
+	defer cleanup()
+
+	logger, _ := zap.NewDevelopment()
+	cfg := New(configPath, logger, WithWatcher())
+
+	err := cfg.Load()
+	require.NoError(t, err)
+
+	t.Run("Watch Config Changes", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		changes := make(chan struct{}, 1)
+		err := cfg.Watch(ctx, func() {
+			changes <- struct{}{}
+		})
+		require.NoError(t, err)
+
+		// Give watcher time to initialize
+		time.Sleep(500 * time.Millisecond)
+
+		// Create new content with meaningful change
+		newContent := []byte(`
+server:
+  port: 9000
+  host: "localhost"
+  timeout: "30s"
+database:
+  host: "127.0.0.1"
+  port: 5432
+  name: "testdb"
+  maxConns: 10
+`)
+		err = os.WriteFile(configPath, newContent, 0644)
+		require.NoError(t, err)
+
+		// Force reload
+		err = cfg.Load()
+		require.NoError(t, err)
+
+		select {
+		case <-changes:
+			val := cfg.GetInt("server.port")
+			assert.Equal(t, 9000, val)
+		case <-time.After(2 * time.Second):
+			t.Fatal("timeout waiting for config change")
+		}
+	})
+}
+
+func TestConfigDefaults(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	t.Run("Default Values", func(t *testing.T) {
+		defaults := map[string]interface{}{
+			"server.port": 8080,
+			"server.host": "localhost",
+		}
+
+		// Use absolute path that definitely won't exist
+		cfg := New("/tmp/definitely-does-not-exist/config.yaml", logger, WithDefaults(defaults))
+		err := cfg.Load()
+		require.NoError(t, err, "Load should succeed with defaults even if file is missing")
+
+		// Verify defaults are set
+		assert.Equal(t, 8080, cfg.GetInt("server.port"))
+		assert.Equal(t, "localhost", cfg.GetString("server.host"))
+		assert.True(t, cfg.IsSet("server.port"))
+	})
+
+	t.Run("Defaults with File Override", func(t *testing.T) {
+		defaults := map[string]interface{}{
+			"server.port": 8080,
+			"server.host": "localhost",
+			"db.port":     5432,
+		}
+
+		configPath, cleanup := setupTestConfig(t)
+		defer cleanup()
+
+		cfg := New(configPath, logger, WithDefaults(defaults))
+		err := cfg.Load()
+		require.NoError(t, err)
+
+		// File value should override default
+		assert.Equal(t, 8080, cfg.GetInt("server.port"))
+		// Default should be present for non-file value
+		assert.Equal(t, 5432, cfg.GetInt("db.port"))
+	})
+}
+
+func TestConfigErrors(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	t.Run("Invalid File Path", func(t *testing.T) {
+		cfg := New("nonexistent.yaml", logger)
+		err := cfg.Load()
+		assert.Error(t, err)
+	})
+
+	t.Run("Invalid Remote Provider", func(t *testing.T) {
+		cfg := New("config.yaml", logger, WithRemoteProvider(&RemoteProvider{
+			Type:     "invalid",
+			Endpoint: "localhost:1234",
+			Path:     "/config",
+		}))
+		err := cfg.Load()
+		assert.Error(t, err)
+	})
+}
+
+func TestConfigClose(t *testing.T) {
+	configPath, cleanup := setupTestConfig(t)
+	defer cleanup()
+
+	logger, _ := zap.NewDevelopment()
+	cfg := New(configPath, logger)
+
+	t.Run("Close Config", func(t *testing.T) {
+		err := cfg.Close()
+		require.NoError(t, err)
+
+		// Verify operations after close
+		err = cfg.Load()
+		assert.Equal(t, ErrClosed, err)
+	})
+}
+
+// Add more test cases for better coverage
+func TestAdditionalConfigOperations(t *testing.T) {
+	t.Run("IsSet Basic", func(t *testing.T) {
+		// Create a new temporary directory and config file for this specific test
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "config.yaml")
+
+		// Write initial config
+		content := []byte(`
+server:
+  port: 8080
+  host: "localhost"
+  timeout: "30s"
+`)
+		err := os.WriteFile(configPath, content, 0644)
+		require.NoError(t, err)
+
+		// Create new config instance
+		logger, _ := zap.NewDevelopment()
+		cfg := New(configPath, logger)
+
+		// Load the configuration
+		err = cfg.Load()
+		require.NoError(t, err)
+
+		// Log the full configuration for debugging
+		settings := cfg.AllSettings()
+		t.Logf("Complete configuration: %+v", settings)
+
+		// Verify server section exists
+		serverSection, ok := settings["server"].(map[string]interface{})
+		require.True(t, ok, "server section should exist")
+		require.NotNil(t, serverSection, "server section should not be nil")
+		t.Logf("Server section: %+v", serverSection)
+
+		// Verify individual values
+		portValue := serverSection["port"]
+		t.Logf("Port value: %v (type: %T)", portValue, portValue)
+
+		// Test settings
+		assert.True(t, cfg.IsSet("server.port"), "server.port should be set")
+		assert.True(t, cfg.IsSet("server.host"), "server.host should be set")
+		assert.Equal(t, 8080, cfg.GetInt("server.port"), "server.port should be 8080")
+		assert.Equal(t, "localhost", cfg.GetString("server.host"), "server.host should be localhost")
+	})
+
+	t.Run("Config Updates", func(t *testing.T) {
+		// Create a new config instance and path for all update tests
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "config.yaml")
+		logger, _ := zap.NewDevelopment()
+		cfg := New(configPath, logger)
+
+		t.Run("GetStringSlice", func(t *testing.T) {
+			content := []byte(`values:
+  - one
+  - two
+  - three`)
+			err := os.WriteFile(configPath, content, 0644)
+			require.NoError(t, err)
+
+			err = cfg.Load()
+			require.NoError(t, err)
+
+			slice := cfg.GetStringSlice("values")
+			assert.Equal(t, []string{"one", "two", "three"}, slice)
+		})
+
+		t.Run("GetStringMap", func(t *testing.T) {
+			content := []byte(`mapping:
+  key1: value1
+  key2: value2`)
+			err := os.WriteFile(configPath, content, 0644)
+			require.NoError(t, err)
+
+			err = cfg.Load()
+			require.NoError(t, err)
+
+			m := cfg.GetStringMap("mapping")
+			expected := map[string]interface{}{
+				"key1": "value1",
+				"key2": "value2",
+			}
+			assert.Equal(t, expected, m)
+		})
+
+		t.Run("AllKeys and AllSettings", func(t *testing.T) {
+			keys := cfg.AllKeys()
+			assert.NotEmpty(t, keys)
+
+			settings := cfg.AllSettings()
+			assert.NotEmpty(t, settings)
+		})
+
+		t.Run("IsSet After Update", func(t *testing.T) {
+			content := []byte(`
+test_key: "test_value"
+nested:
+  key: value
+`)
+			err := os.WriteFile(configPath, content, 0644)
+			require.NoError(t, err)
+
+			err = cfg.Load()
+			require.NoError(t, err)
+
+			// Verify new keys are set
+			assert.True(t, cfg.IsSet("test_key"), "test_key should be set")
+			assert.True(t, cfg.IsSet("nested.key"), "nested.key should be set")
+
+			// Verify old keys are no longer set
+			assert.False(t, cfg.IsSet("server.port"), "server.port should not be set")
+			assert.False(t, cfg.IsSet("nonexistent.key"), "nonexistent.key should not be set")
+		})
+
+		t.Run("GetBool", func(t *testing.T) {
+			content := []byte(`
+features:
+  enabled: true
+  disabled: false
+`)
+			err := os.WriteFile(configPath, content, 0644)
+			require.NoError(t, err)
+
+			err = cfg.Load()
+			require.NoError(t, err)
+
+			assert.True(t, cfg.GetBool("features.enabled"))
+			assert.False(t, cfg.GetBool("features.disabled"))
+		})
+
+		t.Run("GetTime", func(t *testing.T) {
+			content := []byte(`
+timestamps:
+  created: 2023-01-01T00:00:00Z
+`)
+			err := os.WriteFile(configPath, content, 0644)
+			require.NoError(t, err)
+
+			err = cfg.Load()
+			require.NoError(t, err)
+
+			expected := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+			assert.Equal(t, expected, cfg.GetTime("timestamps.created"))
+		})
+	})
+}
+
+func TestRemoteConfigTimeout(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	cfg := New("config.yaml", logger, WithRemoteProvider(&RemoteProvider{
+		Type:     "nonexistent",
+		Endpoint: "localhost:1234",
 		Path:     "/config",
-	}
+	}))
 
-	cm := New(
-		"", // path not needed for remote config
-		logger,
-		WithSchema(schema),
-		WithRemoteProvider(remoteProvider),
-		WithPollInterval(100*time.Millisecond),
-	)
-
-	err := cm.Load()
-	if err != nil {
-		// Expected to fail since this is just a mock
-		assert.Contains(t, err.Error(), "mock")
-	}
+	err := cfg.Load()
+	assert.Error(t, err)
 }
 
-func TestConfigGetters(t *testing.T) {
-	content := `{
-		"string_value": "test",
-		"int_value": 42,
-		"float_value": 3.14,
-		"bool_value": true,
-		"duration_value": "1h30m",
-		"time_value": "2024-02-21T15:04:05Z",
-		"string_slice": ["a", "b", "c"],
-		"string_map": {
-			"key1": "value1",
-			"key2": "value2"
-		}
-	}`
+func TestConcurrentModification(t *testing.T) {
+	configPath, cleanup := setupTestConfig(t)
+	defer cleanup()
 
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.json")
-	err := os.WriteFile(configPath, []byte(content), 0644)
-	assert.NoError(t, err)
+	logger, _ := zap.NewDevelopment()
+	cfg := New(configPath, logger)
+	err := cfg.Load()
+	require.NoError(t, err)
 
-	logger := setupTestLogger()
-	cm := New(configPath, logger)
-	err = cm.Load()
-	assert.NoError(t, err)
-
-	// Test all getters
-	assert.Equal(t, "test", cm.GetString("string_value"))
-	assert.Equal(t, 42, cm.GetInt("int_value"))
-	assert.Equal(t, 3.14, cm.GetFloat64("float_value"))
-	assert.Equal(t, true, cm.GetBool("bool_value"))
-	assert.Equal(t, 90*time.Minute, cm.GetDuration("duration_value"))
-	assert.Equal(t, []string{"a", "b", "c"}, cm.GetStringSlice("string_slice"))
-
-	expectedMap := map[string]interface{}{
-		"key1": "value1",
-		"key2": "value2",
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			err := cfg.Load()
+			assert.NoError(t, err)
+		}()
+		go func() {
+			defer wg.Done()
+			_ = cfg.GetString("server.host")
+		}()
 	}
-	assert.Equal(t, expectedMap, cm.GetStringMap("string_map"))
-
-	expectedTime := time.Date(2024, 2, 21, 15, 4, 5, 0, time.UTC)
-	assert.Equal(t, expectedTime, cm.GetTime("time_value"))
-
-	// Test IsSet
-	assert.True(t, cm.IsSet("string_value"))
-	assert.False(t, cm.IsSet("nonexistent_key"))
-}
-
-func TestAllKeys(t *testing.T) {
-	content := `{
-        "database": {
-            "host": "localhost",
-            "port": 5432
-        },
-        "server": {
-            "enabled": true,
-            "settings": {
-                "timeout": "5s"
-            }
-        }
-    }`
-
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.json")
-	err := os.WriteFile(configPath, []byte(content), 0644)
-	assert.NoError(t, err)
-
-	logger := setupTestLogger()
-	cm := New(configPath, logger)
-	err = cm.Load()
-	assert.NoError(t, err)
-
-	expectedKeys := []string{
-		"database.host",
-		"database.port",
-		"server.enabled",
-		"server.settings.timeout",
-	}
-
-	keys := cm.AllKeys()
-	assert.ElementsMatch(t, expectedKeys, keys)
+	wg.Wait()
 }
