@@ -154,14 +154,22 @@ func New(path string, logger *zap.Logger, opts ...Option) *ConfigManager {
 // Close gracefully shuts down the config manager and its watchers
 func (cm *ConfigManager) Close() error {
 	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
 	if cm.closed {
+		cm.mu.Unlock()
 		return nil
 	}
-
 	cm.closed = true
 	close(cm.done)
+	cm.mu.Unlock()
+
+	// Stop the watcher if it implements cleanup
+	if w, ok := cm.watcher.(*LocalConfigWatcher); ok {
+		if err := w.Stop(); err != nil {
+			cm.logger.Error("Error stopping watcher", zap.Error(err))
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -457,8 +465,12 @@ func (r *RemoteConfigProvider) Load() error {
 
 // LocalConfigWatcher implements ConfigWatcher using Viper's file-watching.
 type LocalConfigWatcher struct {
-	viper  *viper.Viper
-	logger *zap.Logger
+	viper     *viper.Viper
+	logger    *zap.Logger
+	mu        sync.Mutex
+	watching  bool
+	stopCh    chan struct{}
+	cleanupWg sync.WaitGroup
 }
 
 func (w *LocalConfigWatcher) Watch(ctx context.Context, onChange func()) error {
@@ -466,30 +478,76 @@ func (w *LocalConfigWatcher) Watch(ctx context.Context, onChange func()) error {
 		return errors.New("context cannot be nil")
 	}
 
-	// Create a channel for cleanup
-	done := make(chan struct{})
+	w.mu.Lock()
+	if w.watching {
+		w.mu.Unlock()
+		return errors.New("watcher is already running")
+	}
 
-	// Setup the watcher
-	w.viper.OnConfigChange(func(e fsnotify.Event) {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			w.logger.Info("Local configuration changed", zap.String("file", e.Name))
-			onChange()
-		}
-	})
-	w.viper.WatchConfig()
+	// Initialize stop channel
+	w.stopCh = make(chan struct{})
+	w.watching = true
+	w.mu.Unlock()
 
-	// Handle context cancellation
+	// Start the cleanup goroutine
+	w.cleanupWg.Add(1)
 	go func() {
+		defer w.cleanupWg.Done()
+		defer func() {
+			w.mu.Lock()
+			w.watching = false
+			w.mu.Unlock()
+		}()
+
+		// Setup the watcher
+		w.viper.OnConfigChange(func(e fsnotify.Event) {
+			select {
+			case <-w.stopCh:
+				return
+			case <-ctx.Done():
+				return
+			default:
+				w.logger.Info("Local configuration changed", zap.String("file", e.Name))
+				onChange()
+			}
+		})
+		w.viper.WatchConfig()
+
+		// Wait for cancellation
 		select {
 		case <-ctx.Done():
-			close(done)
+			w.logger.Debug("Context cancelled, stopping watcher")
+		case <-w.stopCh:
+			w.logger.Debug("Watcher stopped explicitly")
 		}
 	}()
 
 	return nil
+}
+
+// Stop gracefully stops the watcher and waits for cleanup
+func (w *LocalConfigWatcher) Stop() error {
+	w.mu.Lock()
+	if !w.watching {
+		w.mu.Unlock()
+		return nil
+	}
+	close(w.stopCh)
+	w.mu.Unlock()
+
+	// Wait for cleanup with timeout
+	done := make(chan struct{})
+	go func() {
+		w.cleanupWg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-time.After(5 * time.Second):
+		return errors.New("timeout waiting for watcher cleanup")
+	}
 }
 
 // RemoteConfigWatcher implements ConfigWatcher by polling the remote source.
