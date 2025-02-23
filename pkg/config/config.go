@@ -19,7 +19,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os" // Add missing import
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -291,10 +292,14 @@ type LocalConfigProvider struct {
 }
 
 func (l *LocalConfigProvider) Load() error {
-	// Clear existing config and create fresh viper instance
-	l.viper.Set("", nil)
+	// Clear all settings but keep the instance
+	l.viper.AllSettings()
+	l.viper.AllKeys()
+	for _, key := range l.viper.AllKeys() {
+		l.viper.Set(key, nil)
+	}
 
-	// Set defaults first
+	// Set defaults
 	for key, value := range l.defaults {
 		l.viper.SetDefault(key, value)
 		l.logger.Debug("Setting default value",
@@ -307,6 +312,11 @@ func (l *LocalConfigProvider) Load() error {
 		l.viper.SetEnvPrefix(l.envPrefix)
 		l.viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 		l.viper.AutomaticEnv()
+	}
+
+	// Set config type based on file extension
+	if ext := filepath.Ext(l.path); ext != "" {
+		l.viper.SetConfigType(strings.TrimPrefix(ext, "."))
 	}
 
 	// Load the config file if it exists
@@ -325,18 +335,19 @@ func (l *LocalConfigProvider) Load() error {
 	l.logger.Debug("Configuration loaded",
 		zap.Any("settings", l.viper.AllSettings()))
 
-	// Unmarshal into the schema if provided.
+	// Unmarshal into schema if provided
 	if l.schema != nil {
 		if err := l.viper.Unmarshal(l.schema); err != nil {
 			return err
 		}
-		// Validate the loaded configuration.
+		// Validate the loaded configuration
 		if l.validate != nil {
 			if err := l.validateConfig(); err != nil {
 				return err
 			}
 		}
 	}
+
 	return nil
 }
 
